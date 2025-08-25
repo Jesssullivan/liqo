@@ -31,7 +31,9 @@ import (
 )
 
 // GetForeignClusterByID returns a ForeignCluster CR retrieving it by its clusterID.
+// It first tries to find by label, then falls back to finding by name if not found.
 func GetForeignClusterByID(ctx context.Context, cl client.Client, clusterID liqov1beta1.ClusterID) (*liqov1beta1.ForeignCluster, error) {
+	// First try to get by label (existing behavior)
 	lSelector := labels.SelectorFromSet(labels.Set{
 		consts.RemoteClusterID: string(clusterID),
 	})
@@ -43,7 +45,35 @@ func GetForeignClusterByID(ctx context.Context, cl client.Client, clusterID liqo
 		return nil, err
 	}
 
-	return getForeignCluster(&foreignClusterList, clusterID)
+	// If found by label, return it
+	if len(foreignClusterList.Items) > 0 {
+		return getForeignCluster(&foreignClusterList, clusterID)
+	}
+
+	// If not found by label, try to get by name (for out-of-band peering)
+	fc := &liqov1beta1.ForeignCluster{}
+	err := cl.Get(ctx, client.ObjectKey{Name: string(clusterID)}, fc)
+	if err != nil {
+		if kerrors.IsNotFound(err) {
+			// Also check if there's a ForeignCluster with this clusterID in the spec
+			allFCs := &liqov1beta1.ForeignClusterList{}
+			if listErr := cl.List(ctx, allFCs); listErr == nil {
+				for i := range allFCs.Items {
+					if allFCs.Items[i].Spec.ClusterID == clusterID {
+						return &allFCs.Items[i], nil
+					}
+				}
+			}
+		}
+		return nil, kerrors.NewNotFound(liqov1beta1.ForeignClusterGroupResource, fmt.Sprintf("foreign cluster with ID %s", clusterID))
+	}
+	
+	// Ensure the ForeignCluster has the correct clusterID
+	if fc.Spec.ClusterID != "" && fc.Spec.ClusterID != clusterID {
+		return nil, kerrors.NewNotFound(liqov1beta1.ForeignClusterGroupResource, fmt.Sprintf("foreign cluster with ID %s", clusterID))
+	}
+	
+	return fc, nil
 }
 
 // GetForeignClusterByIDWithDynamicClient returns a ForeignCluster CR retrieving it by its clusterID, using the dynamic interface.
