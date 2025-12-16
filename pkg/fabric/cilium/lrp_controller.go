@@ -92,6 +92,9 @@ func NewLRPReconciler(
 // +kubebuilder:rbac:groups=cilium.io,resources=ciliumlocalredirectpolicies,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile handles Configuration events and manages corresponding LRP resources.
+// NOTE: CiliumLocalRedirectPolicy only supports single IP addresses, not CIDRs.
+// Since Liqo needs CIDR-based routing, LRP creation is currently disabled.
+// WireGuard tunnel traffic works regardless because it's encapsulated UDP to the gateway pod.
 func (r *LRPReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	klog.V(4).Infof("Reconciling Configuration %s for Cilium LRP", req.NamespacedName)
 
@@ -105,25 +108,10 @@ func (r *LRPReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	cfg := &networkingv1beta1.Configuration{}
 	if err := r.Get(ctx, req.NamespacedName, cfg); err != nil {
 		if apierrors.IsNotFound(err) {
-			// Configuration deleted, LRP will be garbage collected via owner reference
-			klog.V(4).Infof("Configuration %s not found, LRP will be garbage collected", req.NamespacedName)
+			klog.V(4).Infof("Configuration %s not found", req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("unable to get Configuration %s: %w", req.NamespacedName, err)
-	}
-
-	// Handle deletion
-	if !cfg.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, cfg)
-	}
-
-	// Ensure finalizer is present
-	if !controllerutil.ContainsFinalizer(cfg, LRPControllerFinalizer) {
-		controllerutil.AddFinalizer(cfg, LRPControllerFinalizer)
-		if err := r.Update(ctx, cfg); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to Configuration %s: %w", req.NamespacedName, err)
-		}
-		return ctrl.Result{Requeue: true}, nil
 	}
 
 	// Get remote cluster ID from Configuration labels
@@ -140,13 +128,12 @@ func (r *LRPReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{}, nil
 	}
 
-	// Ensure LRP exists for this peering
-	if err := r.ensureLRP(ctx, cfg, remoteClusterID, remotePodCIDR); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to ensure LRP for Configuration %s: %w", req.NamespacedName, err)
-	}
+	// Log informational message about the limitation
+	// CiliumLocalRedirectPolicy only supports single IP addresses, not CIDRs
+	// However, Liqo's WireGuard tunnel works regardless because traffic is encapsulated
+	klog.V(2).Infof("Cilium LRP limitation: CiliumLocalRedirectPolicy does not support CIDR-based routing (Configuration %s, CIDR: %s). "+
+		"Liqo connectivity should still work via WireGuard tunnel encapsulation.", req.NamespacedName, remotePodCIDR)
 
-	klog.V(2).Infof("Ensured CiliumLocalRedirectPolicy for Configuration %s (ClusterID: %s, CIDR: %s)",
-		req.NamespacedName, remoteClusterID, remotePodCIDR)
 	return ctrl.Result{}, nil
 }
 

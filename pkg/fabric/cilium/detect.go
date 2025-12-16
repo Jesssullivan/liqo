@@ -160,7 +160,12 @@ func DetectAndLog(ctx context.Context, cl client.Client) (*CiliumConfig, error) 
 
 	if config.Detected {
 		if config.NeedsLRP() {
-			klog.Info("Cilium eBPF host routing detected - CiliumLocalRedirectPolicy will be used for Liqo traffic")
+			// Note: CiliumLocalRedirectPolicy only supports single IP addresses, not CIDRs.
+			// Liqo's WireGuard tunnel traffic still works because it's encapsulated UDP to
+			// the gateway pod, which doesn't require CIDR-based routing.
+			klog.Info("Cilium eBPF host routing detected - LRP controller enabled for monitoring")
+			klog.Info("Note: CiliumLocalRedirectPolicy does not support CIDR-based routing. " +
+				"Liqo connectivity relies on WireGuard tunnel encapsulation.")
 		} else if config.Detected && !config.LRPSupported {
 			klog.Warning("Cilium eBPF host routing detected but LRP not supported - Liqo routing may not work correctly")
 		} else {
