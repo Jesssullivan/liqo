@@ -8,7 +8,7 @@ stages:
 variables:
   REGISTRY: registry.gitlab.com
   IMAGE_NAME: $CI_PROJECT_PATH
-  GO_VERSION: "1.22"
+  GO_VERSION: "1.24"
   # Components to build
   FABRIC_COMPONENT: fabric
 
