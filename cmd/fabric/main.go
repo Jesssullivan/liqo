@@ -180,6 +180,7 @@ func run(cmd *cobra.Command, _ []string) error {
 			mgr.GetScheme(),
 			mgr.GetEventRecorderFor("cilium-lrp-controller"),
 			ciliumConfig,
+			cfg, // Pass rest config for dynamic client
 		)
 		if err != nil {
 			return fmt.Errorf("unable to create Cilium LRP reconciler: %w", err)

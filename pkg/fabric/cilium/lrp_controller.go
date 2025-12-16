@@ -23,7 +23,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -57,6 +58,9 @@ type LRPReconciler struct {
 	Scheme         *runtime.Scheme
 	EventsRecorder record.EventRecorder
 	CiliumConfig   *CiliumConfig
+	// DynamicClient is used for CiliumLocalRedirectPolicy operations
+	// because the manager's REST mapper may not have discovered Cilium CRDs at startup.
+	DynamicClient dynamic.Interface
 }
 
 // NewLRPReconciler creates a new LRPReconciler.
@@ -65,12 +69,22 @@ func NewLRPReconciler(
 	scheme *runtime.Scheme,
 	recorder record.EventRecorder,
 	ciliumConfig *CiliumConfig,
+	cfg *rest.Config,
 ) (*LRPReconciler, error) {
+	// Create a dynamic client for CiliumLocalRedirectPolicy operations.
+	// We use the dynamic client because controller-runtime's REST mapper
+	// may not have discovered the Cilium CRDs at manager startup time.
+	dynClient, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dynamic client: %w", err)
+	}
+
 	return &LRPReconciler{
 		Client:         cl,
 		Scheme:         scheme,
 		EventsRecorder: recorder,
 		CiliumConfig:   ciliumConfig,
+		DynamicClient:  dynClient,
 	}, nil
 }
 
@@ -143,15 +157,10 @@ func (r *LRPReconciler) handleDeletion(ctx context.Context, cfg *networkingv1bet
 	// Get remote cluster ID from labels
 	remoteClusterID := cfg.Labels[consts.RemoteClusterID]
 	if remoteClusterID != "" {
-		// Delete the LRP
+		// Delete the LRP using dynamic client
 		lrpName := ForgeLRPName(remoteClusterID)
-		lrp := &unstructured.Unstructured{}
-		lrp.SetAPIVersion(LRPAPIVersion)
-		lrp.SetKind(LRPKind)
-		lrp.SetName(lrpName)
-		lrp.SetNamespace(LiqoNamespace)
-
-		if err := r.Delete(ctx, lrp); err != nil && !apierrors.IsNotFound(err) {
+		err := r.DynamicClient.Resource(LRPControllerGVR).Namespace(LiqoNamespace).Delete(ctx, lrpName, metav1.DeleteOptions{})
+		if err != nil && !apierrors.IsNotFound(err) {
 			return ctrl.Result{}, fmt.Errorf("failed to delete LRP %s: %w", lrpName, err)
 		}
 		klog.Infof("Cleaned up CiliumLocalRedirectPolicy %s for deleted Configuration %s/%s",
@@ -185,12 +194,10 @@ func (r *LRPReconciler) getRemotePodCIDR(cfg *networkingv1beta1.Configuration) s
 // ensureLRP ensures the CiliumLocalRedirectPolicy exists for the given Configuration.
 func (r *LRPReconciler) ensureLRP(ctx context.Context, cfg *networkingv1beta1.Configuration, remoteClusterID, remotePodCIDR string) error {
 	lrpName := ForgeLRPName(remoteClusterID)
+	lrpResource := r.DynamicClient.Resource(LRPControllerGVR).Namespace(LiqoNamespace)
 
-	// Check if LRP already exists
-	existing := &unstructured.Unstructured{}
-	existing.SetAPIVersion(LRPAPIVersion)
-	existing.SetKind(LRPKind)
-	err := r.Get(ctx, types.NamespacedName{Name: lrpName, Namespace: LiqoNamespace}, existing)
+	// Check if LRP already exists using dynamic client
+	existing, err := lrpResource.Get(ctx, lrpName, metav1.GetOptions{})
 
 	if err == nil {
 		// LRP exists, check if it needs update
@@ -208,19 +215,25 @@ func (r *LRPReconciler) ensureLRP(ctx context.Context, cfg *networkingv1beta1.Co
 	lrp := ForgeLRPForRemoteCluster(remoteClusterID, remotePodCIDR)
 
 	// Set owner reference for garbage collection
-	ownerRef := metav1.OwnerReference{
-		APIVersion:         cfg.APIVersion,
-		Kind:               cfg.Kind,
-		Name:               cfg.Name,
-		UID:                cfg.UID,
-		BlockOwnerDeletion: func() *bool { b := true; return &b }(),
-		Controller:         func() *bool { b := true; return &b }(),
+	// Note: Cross-namespace owner references are not supported in Kubernetes,
+	// so we rely on the finalizer for cleanup instead.
+	// We still add owner reference if in same namespace for GC.
+	if cfg.Namespace == LiqoNamespace {
+		ownerRef := metav1.OwnerReference{
+			APIVersion:         cfg.APIVersion,
+			Kind:               cfg.Kind,
+			Name:               cfg.Name,
+			UID:                cfg.UID,
+			BlockOwnerDeletion: func() *bool { b := true; return &b }(),
+			Controller:         func() *bool { b := true; return &b }(),
+		}
+		lrp.SetOwnerReferences([]metav1.OwnerReference{ownerRef})
 	}
-	lrp.SetOwnerReferences([]metav1.OwnerReference{ownerRef})
 
 	if apierrors.IsNotFound(err) {
-		// Create new LRP
-		if err := r.Create(ctx, lrp); err != nil {
+		// Create new LRP using dynamic client
+		_, err := lrpResource.Create(ctx, lrp, metav1.CreateOptions{})
+		if err != nil {
 			return fmt.Errorf("failed to create LRP %s: %w", lrpName, err)
 		}
 		klog.Infof("Created CiliumLocalRedirectPolicy %s for remote cluster %s (CIDR: %s)",
@@ -228,8 +241,11 @@ func (r *LRPReconciler) ensureLRP(ctx context.Context, cfg *networkingv1beta1.Co
 		r.EventsRecorder.Event(cfg, "Normal", "LRPCreated",
 			fmt.Sprintf("Created CiliumLocalRedirectPolicy for remote pods CIDR %s", remotePodCIDR))
 	} else {
-		// Update existing LRP
-		if err := r.Update(ctx, lrp); err != nil {
+		// Update existing LRP using dynamic client
+		// Preserve the resourceVersion for update
+		lrp.SetResourceVersion(existing.GetResourceVersion())
+		_, err := lrpResource.Update(ctx, lrp, metav1.UpdateOptions{})
+		if err != nil {
 			return fmt.Errorf("failed to update LRP %s: %w", lrpName, err)
 		}
 		klog.Infof("Updated CiliumLocalRedirectPolicy %s for remote cluster %s (CIDR: %s)",
