@@ -35,8 +35,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	liqov1beta1 "github.com/liqotech/liqo/apis/core/v1beta1"
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
 	"github.com/liqotech/liqo/pkg/fabric"
+	"github.com/liqotech/liqo/pkg/fabric/cilium"
 	sourcedetector "github.com/liqotech/liqo/pkg/fabric/source-detector"
 	"github.com/liqotech/liqo/pkg/firewall"
 	"github.com/liqotech/liqo/pkg/gateway"
@@ -59,6 +61,7 @@ var (
 )
 
 func init() {
+	utilruntime.Must(liqov1beta1.AddToScheme(scheme))
 	utilruntime.Must(networkingv1beta1.AddToScheme(scheme))
 	utilruntime.Must(corev1.AddToScheme(scheme))
 }
@@ -149,6 +152,35 @@ func run(cmd *cobra.Command, _ []string) error {
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		return fmt.Errorf("unable to set up readyz probe: %w", err)
+	}
+
+	// Detect Cilium CNI configuration for eBPF host routing compatibility.
+	// When Cilium with eBPF host routing is detected, we need to create
+	// CiliumLocalRedirectPolicy resources to redirect cross-cluster traffic
+	// to the Liqo gateway pod (since eBPF bypasses kernel routing tables).
+	ciliumConfig, err := cilium.DetectAndLog(cmd.Context(), mgr.GetClient())
+	if err != nil {
+		klog.Warningf("Failed to detect Cilium configuration: %v", err)
+		// Continue without Cilium LRP support - standard routing will be used
+		ciliumConfig = nil
+	}
+
+	// Setup Cilium LRP controller if needed
+	if ciliumConfig != nil && ciliumConfig.NeedsLRP() {
+		lrpReconciler, err := cilium.NewLRPReconciler(
+			mgr.GetClient(),
+			mgr.GetScheme(),
+			mgr.GetEventRecorderFor("cilium-lrp-controller"),
+			ciliumConfig,
+		)
+		if err != nil {
+			return fmt.Errorf("unable to create Cilium LRP reconciler: %w", err)
+		}
+
+		if err := lrpReconciler.SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to setup Cilium LRP reconciler: %w", err)
+		}
+		klog.Info("Cilium LRP controller enabled for eBPF host routing compatibility")
 	}
 
 	gwr, err := sourcedetector.NewGatewayReconciler(
