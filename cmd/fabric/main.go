@@ -158,7 +158,15 @@ func run(cmd *cobra.Command, _ []string) error {
 	// When Cilium with eBPF host routing is detected, we need to create
 	// CiliumLocalRedirectPolicy resources to redirect cross-cluster traffic
 	// to the Liqo gateway pod (since eBPF bypasses kernel routing tables).
-	ciliumConfig, err := cilium.DetectAndLog(cmd.Context(), mgr.GetClient())
+	//
+	// NOTE: We must use a non-cached client here because the manager cache
+	// hasn't been started yet. Using mgr.GetClient() would fail with
+	// "cache is not started" error.
+	directClient, err := client.New(cfg, client.Options{Scheme: scheme})
+	if err != nil {
+		return fmt.Errorf("unable to create direct client for Cilium detection: %w", err)
+	}
+	ciliumConfig, err := cilium.DetectAndLog(cmd.Context(), directClient)
 	if err != nil {
 		klog.Warningf("Failed to detect Cilium configuration: %v", err)
 		// Continue without Cilium LRP support - standard routing will be used
