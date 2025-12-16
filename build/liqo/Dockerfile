@@ -33,6 +33,8 @@ RUN if [ "$COMPONENT" = "wireguard" ]; then \
 COPY ./bin/${TARGETARCH}/${COMPONENT}_linux_${TARGETARCH} /usr/bin/${COMPONENT}
 RUN chmod +x /usr/bin/${COMPONENT}
 RUN ln -s /usr/bin/${COMPONENT} /usr/bin/liqo-component
+# Create liqo-prefixed symlink for compatibility with Liqo daemonset command
+RUN ln -s /usr/bin/${COMPONENT} /usr/bin/liqo-${COMPONENT}
 
 WORKDIR /workspace
 
