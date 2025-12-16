@@ -9,8 +9,6 @@ variables:
   REGISTRY: registry.gitlab.com
   IMAGE_NAME: $CI_PROJECT_PATH
   GO_VERSION: "1.24"
-  # Components to build
-  FABRIC_COMPONENT: fabric
 
 # Build fabric binary for amd64
 build:fabric:amd64:
@@ -51,17 +49,20 @@ push:fabric:
   stage: push
   image: docker:24-dind
   services:
-    - docker:24-dind
+    - name: docker:24-dind
+      command: ["--tls=false"]
   needs:
     - build:fabric:amd64
     - build:fabric:arm64
   variables:
-    DOCKER_TLS_CERTDIR: "/certs"
+    # Disable TLS for DinD to work with buildx
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_HOST: tcp://docker:2375
     DOCKER_BUILDKIT: "1"
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker buildx create --use --name multiarch-builder || docker buildx use multiarch-builder
-    - docker buildx inspect --bootstrap
+    # Install buildx and setup builder
+    - docker buildx create --driver docker-container --use --name multiarch-builder --bootstrap
   script:
     # Determine image tag
     - |
@@ -76,7 +77,6 @@ push:fabric:
       docker buildx build \
         --platform linux/amd64,linux/arm64 \
         --build-arg COMPONENT=fabric \
-        --build-arg TARGETARCH=amd64 \
         -t ${REGISTRY}/${IMAGE_NAME}/fabric:${IMAGE_TAG} \
         -t ${REGISTRY}/${IMAGE_NAME}/fabric:latest \
         --push \
@@ -123,17 +123,18 @@ push:controller-manager:
   stage: push
   image: docker:24-dind
   services:
-    - docker:24-dind
+    - name: docker:24-dind
+      command: ["--tls=false"]
   needs:
     - build:controller-manager:amd64
     - build:controller-manager:arm64
   variables:
-    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_HOST: tcp://docker:2375
     DOCKER_BUILDKIT: "1"
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker buildx create --use --name multiarch-builder || docker buildx use multiarch-builder
-    - docker buildx inspect --bootstrap
+    - docker buildx create --driver docker-container --use --name multiarch-builder --bootstrap
   script:
     - |
       if [ -n "$CI_COMMIT_TAG" ]; then
@@ -146,7 +147,6 @@ push:controller-manager:
       docker buildx build \
         --platform linux/amd64,linux/arm64 \
         --build-arg COMPONENT=liqo-controller-manager \
-        --build-arg TARGETARCH=amd64 \
         -t ${REGISTRY}/${IMAGE_NAME}/liqo-controller-manager:${IMAGE_TAG} \
         -t ${REGISTRY}/${IMAGE_NAME}/liqo-controller-manager:latest \
         --push \
