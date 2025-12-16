@@ -94,6 +94,13 @@ func ForgeLRP(spec *LRPSpec) *unstructured.Unstructured {
 
 	// Build the LRP spec
 	// CiliumLocalRedirectPolicy redirects matching traffic to a local endpoint
+	// Convert GatewayLabels from map[string]string to map[string]interface{}
+	// to avoid "cannot deep copy map[string]string" panic in SetNestedField
+	gatewayLabelsInterface := make(map[string]interface{}, len(spec.GatewayLabels))
+	for k, v := range spec.GatewayLabels {
+		gatewayLabelsInterface[k] = v
+	}
+
 	lrpSpec := map[string]interface{}{
 		"redirectFrontend": map[string]interface{}{
 			"addressMatcher": map[string]interface{}{
@@ -107,7 +114,7 @@ func ForgeLRP(spec *LRPSpec) *unstructured.Unstructured {
 		},
 		"redirectBackend": map[string]interface{}{
 			"localEndpointSelector": map[string]interface{}{
-				"matchLabels": spec.GatewayLabels,
+				"matchLabels": gatewayLabelsInterface,
 			},
 			"toPorts": []interface{}{
 				map[string]interface{}{
