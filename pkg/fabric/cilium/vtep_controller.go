@@ -223,13 +223,13 @@ func (r *VTEPReconciler) buildVTEPEntry(ctx context.Context, cfg *networkingv1be
 
 // getGatewayPodInfo retrieves the gateway pod's IP and MAC address
 func (r *VTEPReconciler) getGatewayPodInfo(ctx context.Context, namespace, remoteClusterID string) (string, string, error) {
-	// List gateway pods for this remote cluster
+	// List gateway pods in the tenant namespace
+	// We only search by component label since the tenant namespace is unique per remote cluster
 	podList := &corev1.PodList{}
 	listOpts := []client.ListOption{
 		client.InNamespace(namespace),
 		client.MatchingLabels{
 			gateway.GatewayComponentKey: gateway.GatewayComponentGateway,
-			consts.RemoteClusterID:      remoteClusterID,
 		},
 	}
 
