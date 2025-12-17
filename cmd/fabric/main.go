@@ -214,6 +214,23 @@ func run(cmd *cobra.Command, _ []string) error {
 		klog.Info("Cilium IPCache controller enabled for cross-cluster CIDR routing")
 	}
 
+	// Setup Cilium VTEP controller for cross-cluster CIDR routing via VTEP
+	// This configures Cilium's VTEP integration to route remote pod CIDRs
+	// through Liqo gateway pods when eBPF host routing bypasses kernel routing.
+	if ciliumConfig != nil && ciliumConfig.IsBPFHostRouting() {
+		vtepReconciler := cilium.NewVTEPReconciler(
+			mgr.GetClient(),
+			mgr.GetScheme(),
+			mgr.GetEventRecorderFor("cilium-vtep-controller"),
+			ciliumConfig,
+		)
+
+		if err := vtepReconciler.SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to setup Cilium VTEP reconciler: %w", err)
+		}
+		klog.Info("Cilium VTEP controller enabled for cross-cluster CIDR routing")
+	}
+
 	gwr, err := sourcedetector.NewGatewayReconciler(
 		mgr.GetClient(),
 		mgr.GetScheme(),
