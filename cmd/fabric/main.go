@@ -192,6 +192,28 @@ func run(cmd *cobra.Command, _ []string) error {
 		klog.Info("Cilium LRP controller enabled for eBPF host routing compatibility")
 	}
 
+	// Setup Cilium IPCache controller for CIDR-based routing
+	// This injects remote pod CIDRs into Cilium's ipcache, enabling eBPF to route
+	// cross-cluster traffic without falling back to kernel routing tables.
+	if ciliumConfig != nil && ciliumConfig.IsBPFHostRouting() {
+		ipcacheReconciler, err := cilium.NewIPCacheReconciler(
+			mgr.GetClient(),
+			mgr.GetScheme(),
+			mgr.GetEventRecorderFor("cilium-ipcache-controller"),
+			ciliumConfig,
+			cfg,
+			options.NodeName,
+		)
+		if err != nil {
+			return fmt.Errorf("unable to create Cilium IPCache reconciler: %w", err)
+		}
+
+		if err := ipcacheReconciler.SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to setup Cilium IPCache reconciler: %w", err)
+		}
+		klog.Info("Cilium IPCache controller enabled for cross-cluster CIDR routing")
+	}
+
 	gwr, err := sourcedetector.NewGatewayReconciler(
 		mgr.GetClient(),
 		mgr.GetScheme(),
