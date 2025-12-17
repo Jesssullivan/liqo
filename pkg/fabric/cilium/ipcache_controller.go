@@ -285,13 +285,14 @@ func (r *IPCacheReconciler) getRemotePodCIDR(cfg *networkingv1beta1.Configuratio
 
 // getGatewayPodIP finds the gateway pod IP for a remote cluster
 func (r *IPCacheReconciler) getGatewayPodIP(ctx context.Context, namespace, remoteClusterID string) (string, error) {
-	// List gateway pods for this remote cluster
+	// List gateway pods in the tenant namespace.
+	// We only search by component label since the tenant namespace is unique per remote cluster.
+	// Note: Gateway pods don't have consts.RemoteClusterID label, only the component label.
 	podList := &corev1.PodList{}
 	listOpts := []client.ListOption{
 		client.InNamespace(namespace),
 		client.MatchingLabels{
-			gateway.GatewayComponentKey:    gateway.GatewayComponentGateway,
-			consts.RemoteClusterID:         remoteClusterID,
+			gateway.GatewayComponentKey: gateway.GatewayComponentGateway,
 		},
 	}
 

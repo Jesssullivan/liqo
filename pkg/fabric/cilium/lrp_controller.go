@@ -19,8 +19,6 @@ import (
 	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -29,7 +27,6 @@ import (
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
 	"github.com/liqotech/liqo/pkg/consts"
@@ -137,33 +134,6 @@ func (r *LRPReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	return ctrl.Result{}, nil
 }
 
-// handleDeletion handles the deletion of a Configuration and cleans up LRP.
-func (r *LRPReconciler) handleDeletion(ctx context.Context, cfg *networkingv1beta1.Configuration) (ctrl.Result, error) {
-	klog.V(2).Infof("Handling deletion of Configuration %s/%s, cleaning up LRP", cfg.Namespace, cfg.Name)
-
-	// Get remote cluster ID from labels
-	remoteClusterID := cfg.Labels[consts.RemoteClusterID]
-	if remoteClusterID != "" {
-		// Delete the LRP using dynamic client
-		lrpName := ForgeLRPName(remoteClusterID)
-		err := r.DynamicClient.Resource(LRPControllerGVR).Namespace(LiqoNamespace).Delete(ctx, lrpName, metav1.DeleteOptions{})
-		if err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("failed to delete LRP %s: %w", lrpName, err)
-		}
-		klog.Infof("Cleaned up CiliumLocalRedirectPolicy %s for deleted Configuration %s/%s",
-			lrpName, cfg.Namespace, cfg.Name)
-	}
-
-	// Remove finalizer
-	controllerutil.RemoveFinalizer(cfg, LRPControllerFinalizer)
-	if err := r.Update(ctx, cfg); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from Configuration %s/%s: %w",
-			cfg.Namespace, cfg.Name, err)
-	}
-
-	return ctrl.Result{}, nil
-}
-
 // getRemotePodCIDR extracts the remote pod CIDR from the Configuration status.
 // It returns the primary (first) remapped pod CIDR if available.
 func (r *LRPReconciler) getRemotePodCIDR(cfg *networkingv1beta1.Configuration) string {
@@ -176,72 +146,6 @@ func (r *LRPReconciler) getRemotePodCIDR(cfg *networkingv1beta1.Configuration) s
 	}
 	// Return the primary (first) pod CIDR
 	return string(cfg.Status.Remote.CIDR.Pod[0])
-}
-
-// ensureLRP ensures the CiliumLocalRedirectPolicy exists for the given Configuration.
-func (r *LRPReconciler) ensureLRP(ctx context.Context, cfg *networkingv1beta1.Configuration, remoteClusterID, remotePodCIDR string) error {
-	lrpName := ForgeLRPName(remoteClusterID)
-	lrpResource := r.DynamicClient.Resource(LRPControllerGVR).Namespace(LiqoNamespace)
-
-	// Check if LRP already exists using dynamic client
-	existing, err := lrpResource.Get(ctx, lrpName, metav1.GetOptions{})
-
-	if err == nil {
-		// LRP exists, check if it needs update
-		existingCIDR, _, _ := unstructured.NestedString(existing.Object, "metadata", "annotations", "liqo.io/remote-pod-cidr")
-		if existingCIDR == remotePodCIDR {
-			klog.V(4).Infof("LRP %s already exists with correct CIDR", lrpName)
-			return nil
-		}
-		klog.V(2).Infof("LRP %s exists but CIDR changed (%s -> %s), updating", lrpName, existingCIDR, remotePodCIDR)
-	} else if !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to get LRP %s: %w", lrpName, err)
-	}
-
-	// Create or update LRP
-	lrp := ForgeLRPForRemoteCluster(remoteClusterID, remotePodCIDR)
-
-	// Set owner reference for garbage collection
-	// Note: Cross-namespace owner references are not supported in Kubernetes,
-	// so we rely on the finalizer for cleanup instead.
-	// We still add owner reference if in same namespace for GC.
-	if cfg.Namespace == LiqoNamespace {
-		ownerRef := metav1.OwnerReference{
-			APIVersion:         cfg.APIVersion,
-			Kind:               cfg.Kind,
-			Name:               cfg.Name,
-			UID:                cfg.UID,
-			BlockOwnerDeletion: func() *bool { b := true; return &b }(),
-			Controller:         func() *bool { b := true; return &b }(),
-		}
-		lrp.SetOwnerReferences([]metav1.OwnerReference{ownerRef})
-	}
-
-	if apierrors.IsNotFound(err) {
-		// Create new LRP using dynamic client
-		_, err := lrpResource.Create(ctx, lrp, metav1.CreateOptions{})
-		if err != nil {
-			return fmt.Errorf("failed to create LRP %s: %w", lrpName, err)
-		}
-		klog.Infof("Created CiliumLocalRedirectPolicy %s for remote cluster %s (CIDR: %s)",
-			lrpName, remoteClusterID, remotePodCIDR)
-		r.EventsRecorder.Event(cfg, "Normal", "LRPCreated",
-			fmt.Sprintf("Created CiliumLocalRedirectPolicy for remote pods CIDR %s", remotePodCIDR))
-	} else {
-		// Update existing LRP using dynamic client
-		// Preserve the resourceVersion for update
-		lrp.SetResourceVersion(existing.GetResourceVersion())
-		_, err := lrpResource.Update(ctx, lrp, metav1.UpdateOptions{})
-		if err != nil {
-			return fmt.Errorf("failed to update LRP %s: %w", lrpName, err)
-		}
-		klog.Infof("Updated CiliumLocalRedirectPolicy %s for remote cluster %s (CIDR: %s)",
-			lrpName, remoteClusterID, remotePodCIDR)
-		r.EventsRecorder.Event(cfg, "Normal", "LRPUpdated",
-			fmt.Sprintf("Updated CiliumLocalRedirectPolicy for remote pods CIDR %s", remotePodCIDR))
-	}
-
-	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

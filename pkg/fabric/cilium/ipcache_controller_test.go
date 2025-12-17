@@ -22,9 +22,12 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
-	"github.com/liqotech/liqo/pkg/consts"
 	"github.com/liqotech/liqo/pkg/gateway"
 )
+
+// Note: consts.RemoteClusterID is no longer used for gateway pod lookup.
+// Gateway pods are discovered by namespace (tenant namespace is unique per remote cluster)
+// and component label only.
 
 var _ = Describe("IPCache Controller", func() {
 	var (
@@ -132,13 +135,16 @@ var _ = Describe("IPCache Controller", func() {
 				CiliumConfig: ciliumCfg,
 			}
 
+			// NOTE: Gateway pods only have the component label, NOT RemoteClusterID.
+			// The tenant namespace is unique per remote cluster, so we use namespace
+			// to find the correct gateway pod.
 			gatewayPod = &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "liqo-gateway-ipcache-" + remoteClusterID,
 					Namespace: "liqo",
 					Labels: map[string]string{
 						gateway.GatewayComponentKey: gateway.GatewayComponentGateway,
-						consts.RemoteClusterID:      remoteClusterID,
+						// RemoteClusterID label is NOT set - controller uses namespace
 					},
 				},
 				Spec: corev1.PodSpec{
