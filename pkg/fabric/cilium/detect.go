@@ -42,6 +42,10 @@ type CiliumConfig struct {
 	BPFMasqueradeEnabled bool
 	// LRPSupported indicates if CiliumLocalRedirectPolicy CRD is available.
 	LRPSupported bool
+	// LegacyHostRoutingEnabled indicates if bpf.hostLegacyRouting=true is set.
+	LegacyHostRoutingEnabled bool
+	// VTEPEnabled indicates if VTEP integration is already enabled.
+	VTEPEnabled bool
 }
 
 // IsBPFHostRouting returns true if Cilium is using BPF host routing,
@@ -54,6 +58,19 @@ func (c *CiliumConfig) IsBPFHostRouting() bool {
 // CiliumLocalRedirectPolicy for Liqo cross-cluster traffic.
 func (c *CiliumConfig) NeedsLRP() bool {
 	return c.IsBPFHostRouting() && c.LRPSupported
+}
+
+// NeedsVTEP returns true if this Cilium configuration requires VTEP integration
+// for Liqo cross-cluster traffic. VTEP is needed when eBPF host routing is active
+// and legacy host routing fallback is not enabled.
+func (c *CiliumConfig) NeedsVTEP() bool {
+	return c.IsBPFHostRouting() && !c.LegacyHostRoutingEnabled && !c.VTEPEnabled
+}
+
+// IsLegacyHostRoutingEnabled returns true if Cilium has legacy host routing
+// fallback enabled (bpf.hostLegacyRouting=true), which allows kernel routes to work.
+func (c *CiliumConfig) IsLegacyHostRoutingEnabled() bool {
+	return c.LegacyHostRoutingEnabled
 }
 
 const (
@@ -128,11 +145,22 @@ func DetectCiliumConfig(ctx context.Context, cl client.Client) (*CiliumConfig, e
 		}
 	}
 
+	// Check for legacy host routing fallback (bpf.hostLegacyRouting=true)
+	if legacyRouting, ok := cm.Data["bpf-host-legacy-routing"]; ok {
+		config.LegacyHostRoutingEnabled = strings.ToLower(legacyRouting) == "true"
+	}
+
+	// Check for VTEP integration
+	if vtepEnabled, ok := cm.Data["enable-vtep"]; ok {
+		config.VTEPEnabled = strings.ToLower(vtepEnabled) == "true"
+	}
+
 	// Check if CiliumLocalRedirectPolicy CRD is available
 	config.LRPSupported = checkLRPSupport(ctx, cl)
 
-	klog.Infof("Cilium detected: HostRouting=%s, KubeProxyReplacement=%v, LRPSupported=%v",
-		config.HostRoutingMode, config.KubeProxyReplacement, config.LRPSupported)
+	klog.Infof("Cilium detected: HostRouting=%s, KubeProxyReplacement=%v, LegacyRouting=%v, VTEP=%v, LRPSupported=%v",
+		config.HostRoutingMode, config.KubeProxyReplacement, config.LegacyHostRoutingEnabled,
+		config.VTEPEnabled, config.LRPSupported)
 
 	return config, nil
 }
@@ -159,15 +187,21 @@ func DetectAndLog(ctx context.Context, cl client.Client) (*CiliumConfig, error) 
 	}
 
 	if config.Detected {
-		if config.NeedsLRP() {
-			// Note: CiliumLocalRedirectPolicy only supports single IP addresses, not CIDRs.
-			// Liqo's WireGuard tunnel traffic still works because it's encapsulated UDP to
-			// the gateway pod, which doesn't require CIDR-based routing.
-			klog.Info("Cilium eBPF host routing detected - LRP controller enabled for monitoring")
-			klog.Info("Note: CiliumLocalRedirectPolicy does not support CIDR-based routing. " +
-				"Liqo connectivity relies on WireGuard tunnel encapsulation.")
-		} else if config.Detected && !config.LRPSupported {
-			klog.Warning("Cilium eBPF host routing detected but LRP not supported - Liqo routing may not work correctly")
+		if config.IsBPFHostRouting() {
+			if config.LegacyHostRoutingEnabled {
+				klog.Info("Cilium eBPF host routing detected with legacy fallback - standard Liqo routing will work")
+			} else if config.VTEPEnabled {
+				klog.Info("Cilium eBPF host routing detected with VTEP enabled - Liqo VTEP controller will manage routing")
+			} else if config.NeedsVTEP() {
+				klog.Warning("Cilium eBPF host routing detected without legacy fallback or VTEP. " +
+					"Cross-cluster routing may fail. Options: " +
+					"1) Set bpf.hostLegacyRouting=true in Cilium, or " +
+					"2) Liqo will configure VTEP integration automatically")
+			}
+
+			if config.NeedsLRP() {
+				klog.Info("CiliumLocalRedirectPolicy support detected for endpoint-level routing")
+			}
 		} else {
 			klog.Info("Cilium detected with legacy routing - standard Liqo routing will be used")
 		}

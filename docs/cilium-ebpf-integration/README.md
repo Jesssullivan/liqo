@@ -11,6 +11,7 @@ This documentation covers the integration between Liqo's network fabric and Cili
 5. [Canonical Implementation](./05-canonical-implementation.md) - **Liqo patterns & structure**
 6. [Testing Strategy](./06-testing-strategy.md)
 7. [Migration Guide](./07-migration-guide.md)
+8. [Integration Options Analysis](./08-integration-options-analysis.md) - **CERN Discussion Reference**
 
 ## Quick Start
 
