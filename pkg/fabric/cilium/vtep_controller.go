@@ -22,7 +22,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -41,11 +40,6 @@ const (
 	VTEPControllerFinalizer = "liqo.io/cilium-vtep-controller"
 	// VTEPControllerName is the controller name
 	VTEPControllerName = "cilium-vtep-controller"
-
-	// CiliumConfigMapName is the name of Cilium's configuration ConfigMap
-	CiliumConfigMapName = "cilium-config"
-	// CiliumConfigMapNamespace is the namespace where Cilium's ConfigMap lives
-	CiliumConfigMapNamespace = "kube-system"
 
 	// VTEP ConfigMap keys
 	vtepEnabledKey  = "enable-vtep"
@@ -313,7 +307,7 @@ func (r *VTEPReconciler) updateCiliumConfig(ctx context.Context, entries []VTEPE
 	// Get Cilium ConfigMap
 	cm := &corev1.ConfigMap{}
 	if err := r.Get(ctx, types.NamespacedName{
-		Namespace: CiliumConfigMapNamespace,
+		Namespace: CiliumNamespace,
 		Name:      CiliumConfigMapName,
 	}, cm); err != nil {
 		return fmt.Errorf("failed to get Cilium ConfigMap: %w", err)

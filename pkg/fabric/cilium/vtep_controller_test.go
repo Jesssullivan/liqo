@@ -118,7 +118,7 @@ var _ = Describe("VTEP Controller", func() {
 				cm := &corev1.ConfigMap{}
 				err = k8sClient.Get(ctx, types.NamespacedName{
 					Name:      CiliumConfigMapName,
-					Namespace: CiliumConfigMapNamespace,
+					Namespace: CiliumNamespace,
 				}, cm)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(cm.Data["enable-vtep"]).To(Equal("true"))
@@ -153,7 +153,7 @@ var _ = Describe("VTEP Controller", func() {
 				cm := &corev1.ConfigMap{}
 				err = k8sClient.Get(ctx, types.NamespacedName{
 					Name:      CiliumConfigMapName,
-					Namespace: CiliumConfigMapNamespace,
+					Namespace: CiliumNamespace,
 				}, cm)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(cm.Data["vtep-endpoint"]).To(Equal("10.109.0.89 10.109.0.90"))
@@ -180,7 +180,7 @@ var _ = Describe("VTEP Controller", func() {
 				cm := &corev1.ConfigMap{}
 				err = k8sClient.Get(ctx, types.NamespacedName{
 					Name:      CiliumConfigMapName,
-					Namespace: CiliumConfigMapNamespace,
+					Namespace: CiliumNamespace,
 				}, cm)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(cm.Data).ToNot(HaveKey("enable-vtep"))
@@ -214,12 +214,15 @@ var _ = Describe("VTEP Controller", func() {
 						},
 					},
 				},
-				Status: corev1.PodStatus{
-					Phase: corev1.PodRunning,
-					PodIP: gatewayIP,
-				},
 			}
 			Expect(k8sClient.Create(ctx, gatewayPod)).To(Succeed())
+
+			// Status is a subresource - must be updated separately
+			gatewayPod.Status = corev1.PodStatus{
+				Phase: corev1.PodRunning,
+				PodIP: gatewayIP,
+			}
+			Expect(k8sClient.Status().Update(ctx, gatewayPod)).To(Succeed())
 
 			// Create a Configuration resource
 			configuration = &networkingv1beta1.Configuration{
@@ -236,7 +239,7 @@ var _ = Describe("VTEP Controller", func() {
 
 			// Update Configuration status with remote CIDR
 			configuration.Status = networkingv1beta1.ConfigurationStatus{
-				Remote: &networkingv1beta1.ClusterConfigStatus{
+				Remote: &networkingv1beta1.ClusterConfig{
 					CIDR: networkingv1beta1.ClusterConfigCIDR{
 						Pod: []networkingv1beta1.CIDR{networkingv1beta1.CIDR(remotePodCIDR)},
 					},

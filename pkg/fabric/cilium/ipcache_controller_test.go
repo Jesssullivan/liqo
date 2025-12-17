@@ -92,7 +92,7 @@ var _ = Describe("IPCache Controller", func() {
 			reconciler = &IPCacheReconciler{}
 			cfg := &networkingv1beta1.Configuration{
 				Status: networkingv1beta1.ConfigurationStatus{
-					Remote: &networkingv1beta1.ClusterConfigStatus{
+					Remote: &networkingv1beta1.ClusterConfig{
 						CIDR: networkingv1beta1.ClusterConfigCIDR{
 							Pod: []networkingv1beta1.CIDR{},
 						},
@@ -107,7 +107,7 @@ var _ = Describe("IPCache Controller", func() {
 			reconciler = &IPCacheReconciler{}
 			cfg := &networkingv1beta1.Configuration{
 				Status: networkingv1beta1.ConfigurationStatus{
-					Remote: &networkingv1beta1.ClusterConfigStatus{
+					Remote: &networkingv1beta1.ClusterConfig{
 						CIDR: networkingv1beta1.ClusterConfigCIDR{
 							Pod: []networkingv1beta1.CIDR{
 								networkingv1beta1.CIDR(remotePodCIDR),
@@ -149,12 +149,15 @@ var _ = Describe("IPCache Controller", func() {
 						},
 					},
 				},
-				Status: corev1.PodStatus{
-					Phase: corev1.PodRunning,
-					PodIP: gatewayIP,
-				},
 			}
 			Expect(k8sClient.Create(ctx, gatewayPod)).To(Succeed())
+
+			// Status is a subresource - must be updated separately
+			gatewayPod.Status = corev1.PodStatus{
+				Phase: corev1.PodRunning,
+				PodIP: gatewayIP,
+			}
+			Expect(k8sClient.Status().Update(ctx, gatewayPod)).To(Succeed())
 		})
 
 		AfterEach(func() {
