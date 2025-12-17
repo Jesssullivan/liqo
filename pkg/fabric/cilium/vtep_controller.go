@@ -339,7 +339,9 @@ func (r *VTEPReconciler) updateCiliumConfig(ctx context.Context, entries []VTEPE
 		cm.Data[vtepEnabledKey] = "true"
 		cm.Data[vtepEndpointKey] = strings.Join(endpoints, " ")
 		cm.Data[vtepCIDRKey] = strings.Join(cidrs, " ")
-		cm.Data[vtepMaskKey] = strings.Join(masks, " ")
+		// Cilium VTEP expects a single mask value that applies to all entries
+		// Use the mask from the first entry (they should all be the same for /16 pod CIDRs)
+		cm.Data[vtepMaskKey] = masks[0]
 		cm.Data[vtepMACKey] = strings.Join(macs, " ")
 	}
 
