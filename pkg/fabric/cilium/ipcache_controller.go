@@ -325,7 +325,7 @@ func (r *IPCacheReconciler) getGatewayIPFromInternalFabric(ctx context.Context, 
 		return "", fmt.Errorf("gateway IP not set in InternalFabric")
 	}
 
-	return internalFabric.Spec.GatewayIP, nil
+	return string(internalFabric.Spec.GatewayIP), nil
 }
 
 // SetupWithManager sets up the controller
