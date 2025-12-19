@@ -1,9 +1,14 @@
 # GitLab CI/CD for tinyland/liqo - Cilium LRP Support Branch
 # Builds liqo-fabric container image with CiliumLocalRedirectPolicy support
 
+# Include OutBot sync template for DRY sync jobs (Added 2025-12-19)
+include:
+  - remote: 'https://gitlab.com/tinyland/ai/outbot-ci/-/raw/main/templates/gitlab-ci/outbot-sync.yml'
+
 stages:
   - build
   - push
+  - sync  # Added for OutBot sync jobs
 
 variables:
   REGISTRY: registry.gitlab.com
@@ -155,3 +160,22 @@ push:controller-manager:
   rules:
     - if: $CI_COMMIT_BRANCH == "sid/cilium-doks-rke-bridge"
     - if: $CI_COMMIT_TAG
+
+# ============================================
+# OutBot Downstream Sync (Added 2025-12-19)
+# ============================================
+
+# Scheduled sync (runs every 15 min via GitLab Pipeline Schedule)
+outbot:sync:scheduled:
+  extends: .outbot:sync:scheduled
+  stage: sync
+
+# Manual/push-triggered sync
+outbot:sync:
+  extends: .outbot:sync
+  stage: sync
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "sid/cilium-doks-rke-bridge"
+      when: manual
