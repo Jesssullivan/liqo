@@ -22,15 +22,18 @@ downstream:
     - https://github.com/Jesssullivan/liqo
   branch_mapping:
     main: sid/outbot  # Sync main (tinyland) → sid/outbot (github)
-  push_strategy: merge
 
   # ============================================
-  # Commit Organization Strategy
+  # Unified Strategy Configuration (NEW!)
   # ============================================
-  # Auto-strategy: Automatically selects between zone_squash and privacy_incremental
-  # - First sync / dirty downstream → zone_squash (force push)
-  # - Subsequent syncs → privacy_incremental (regular push, files-only fetch)
-  auto_strategy: true
+  # Single field that controls all sync behavior
+  # Values: auto | mirror | zone-squash | privacy-incremental | full-squash
+  # Phase 3+4 AI improvements enabled for all except 'mirror'
+  strategy: "auto"
+
+  # LEGACY (deprecated - handled by StrategyResolver):
+  # push_strategy: merge  # Use strategy: auto instead
+  # auto_strategy: true  # Use strategy: auto instead
 
   # ============================================
   # Privacy Protection Mode
