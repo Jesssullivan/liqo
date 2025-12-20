@@ -1,0 +1,2 @@
+resources:
+- https://raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/v0.3.7/release/kubernetes-manifests.yaml
