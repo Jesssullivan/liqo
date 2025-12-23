@@ -35,10 +35,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	liqov1beta1 "github.com/liqotech/liqo/apis/core/v1beta1"
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
 	"github.com/liqotech/liqo/pkg/fabric"
-	"github.com/liqotech/liqo/pkg/fabric/cilium"
 	sourcedetector "github.com/liqotech/liqo/pkg/fabric/source-detector"
 	"github.com/liqotech/liqo/pkg/firewall"
 	"github.com/liqotech/liqo/pkg/gateway"
@@ -61,7 +59,6 @@ var (
 )
 
 func init() {
-	utilruntime.Must(liqov1beta1.AddToScheme(scheme))
 	utilruntime.Must(networkingv1beta1.AddToScheme(scheme))
 	utilruntime.Must(corev1.AddToScheme(scheme))
 }
@@ -152,83 +149,6 @@ func run(cmd *cobra.Command, _ []string) error {
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		return fmt.Errorf("unable to set up readyz probe: %w", err)
-	}
-
-	// Detect Cilium CNI configuration for eBPF host routing compatibility.
-	// When Cilium with eBPF host routing is detected, we need to create
-	// CiliumLocalRedirectPolicy resources to redirect cross-cluster traffic
-	// to the Liqo gateway pod (since eBPF bypasses kernel routing tables).
-	//
-	// NOTE: We must use a non-cached client here because the manager cache
-	// hasn't been started yet. Using mgr.GetClient() would fail with
-	// "cache is not started" error.
-	directClient, err := client.New(cfg, client.Options{Scheme: scheme})
-	if err != nil {
-		return fmt.Errorf("unable to create direct client for Cilium detection: %w", err)
-	}
-	ciliumConfig, err := cilium.DetectAndLog(cmd.Context(), directClient)
-	if err != nil {
-		klog.Warningf("Failed to detect Cilium configuration: %v", err)
-		// Continue without Cilium LRP support - standard routing will be used
-		ciliumConfig = nil
-	}
-
-	// Setup Cilium LRP controller if needed
-	if ciliumConfig != nil && ciliumConfig.NeedsLRP() {
-		lrpReconciler, err := cilium.NewLRPReconciler(
-			mgr.GetClient(),
-			mgr.GetScheme(),
-			mgr.GetEventRecorderFor("cilium-lrp-controller"),
-			ciliumConfig,
-			cfg, // Pass rest config for dynamic client
-		)
-		if err != nil {
-			return fmt.Errorf("unable to create Cilium LRP reconciler: %w", err)
-		}
-
-		if err := lrpReconciler.SetupWithManager(mgr); err != nil {
-			return fmt.Errorf("unable to setup Cilium LRP reconciler: %w", err)
-		}
-		klog.Info("Cilium LRP controller enabled for eBPF host routing compatibility")
-	}
-
-	// Setup Cilium IPCache controller for CIDR-based routing
-	// This injects remote pod CIDRs into Cilium's ipcache, enabling eBPF to route
-	// cross-cluster traffic without falling back to kernel routing tables.
-	if ciliumConfig != nil && ciliumConfig.IsBPFHostRouting() {
-		ipcacheReconciler, err := cilium.NewIPCacheReconciler(
-			mgr.GetClient(),
-			mgr.GetScheme(),
-			mgr.GetEventRecorderFor("cilium-ipcache-controller"),
-			ciliumConfig,
-			cfg,
-			options.NodeName,
-		)
-		if err != nil {
-			return fmt.Errorf("unable to create Cilium IPCache reconciler: %w", err)
-		}
-
-		if err := ipcacheReconciler.SetupWithManager(mgr); err != nil {
-			return fmt.Errorf("unable to setup Cilium IPCache reconciler: %w", err)
-		}
-		klog.Info("Cilium IPCache controller enabled for cross-cluster CIDR routing")
-	}
-
-	// Setup Cilium VTEP controller for cross-cluster CIDR routing via VTEP
-	// This configures Cilium's VTEP integration to route remote pod CIDRs
-	// through Liqo gateway pods when eBPF host routing bypasses kernel routing.
-	if ciliumConfig != nil && ciliumConfig.IsBPFHostRouting() {
-		vtepReconciler := cilium.NewVTEPReconciler(
-			mgr.GetClient(),
-			mgr.GetScheme(),
-			mgr.GetEventRecorderFor("cilium-vtep-controller"),
-			ciliumConfig,
-		)
-
-		if err := vtepReconciler.SetupWithManager(mgr); err != nil {
-			return fmt.Errorf("unable to setup Cilium VTEP reconciler: %w", err)
-		}
-		klog.Info("Cilium VTEP controller enabled for cross-cluster CIDR routing")
 	}
 
 	gwr, err := sourcedetector.NewGatewayReconciler(

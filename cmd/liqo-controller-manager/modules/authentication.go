@@ -47,7 +47,6 @@ type AuthOption struct {
 	APIServerAddressOverride string
 	CAOverrideB64            string
 	TrustedCA                bool
-	TLSCompatibilityMode     bool
 	SliceStatusOptions       *remoteresourceslicecontroller.SliceStatusOptions
 }
 
@@ -62,7 +61,6 @@ func NewAuthOption(identityProvider identitymanager.IdentityProvider, namespaceM
 		APIServerAddressOverride: opts.APIServerAddressOverride,
 		CAOverrideB64:            opts.CAOverride,
 		TrustedCA:                opts.TrustedCA,
-		TLSCompatibilityMode:     opts.TLSCompatibilityMode,
 		SliceStatusOptions: &remoteresourceslicecontroller.SliceStatusOptions{
 			EnableStorage:             opts.EnableStorage,
 			LocalRealStorageClassName: opts.RealStorageClassName,
@@ -87,7 +85,7 @@ func SetupAuthenticationModule(ctx context.Context, mgr manager.Manager, uncache
 		}
 	}
 
-	if err := enforceAuthenticationKeys(ctx, uncachedClient, opts.LiqoNamespace, opts.TLSCompatibilityMode); err != nil {
+	if err := enforceAuthenticationKeys(ctx, uncachedClient, opts.LiqoNamespace); err != nil {
 		klog.Errorf("Unable to enforce authentication keys: %v", err)
 		return err
 	}
@@ -180,8 +178,8 @@ func SetupAuthenticationModule(ctx context.Context, mgr manager.Manager, uncache
 	return nil
 }
 
-func enforceAuthenticationKeys(ctx context.Context, cl client.Client, liqoNamespace string, tlsCompatibilityMode bool) error {
-	if err := authentication.InitClusterKeys(ctx, cl, liqoNamespace, tlsCompatibilityMode); err != nil {
+func enforceAuthenticationKeys(ctx context.Context, cl client.Client, liqoNamespace string) error {
+	if err := authentication.InitClusterKeys(ctx, cl, liqoNamespace); err != nil {
 		return err
 	}
 
