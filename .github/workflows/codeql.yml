@@ -1,0 +1,116 @@
+# For most projects, this workflow file will not need changing; you simply need
+# to commit it to your repository.
+#
+# You may wish to alter this file to override the set of languages analyzed,
+# or to provide custom queries or build logic.
+#
+# ******** NOTE ********
+# We have attempted to detect the languages in your repository. Please check
+# the `language` matrix defined below to confirm you have the correct set of
+# supported CodeQL languages.
+#
+name: "CodeQL"
+
+on:
+  # Runs at 19:30, everyday
+  schedule:
+    - cron: '30 19 * * *'
+
+jobs:
+  configure:
+    name: "Start Message"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Slack Notification
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_LIQO_NOTIFICATION }}
+          SLACK_COLOR: "#b105f5"
+          SLACK_MESSAGE: "https://github.com/liqotech/liqo/actions/runs/${{ github.run_id }}"
+          SLACK_TITLE: "Daily CodeQL analysis started  :rocket:"
+          MSG_MINIMAL: "true"
+
+  analyze:
+    name: Analyze
+    needs: configure
+    # Runner size impacts CodeQL analysis time. To learn more, please see:
+    #   - https://gh.io/recommended-hardware-resources-for-running-codeql
+    #   - https://gh.io/supported-runners-and-hardware-resources
+    #   - https://gh.io/using-larger-runners
+    # Consider using larger runners for possible analysis time improvements.
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        component:
+          - crd-replicator
+          - ipam
+          - liqo-controller-manager
+          - uninstaller
+          - virtual-kubelet
+          - metric-agent
+          - telemetry
+          - gateway
+          - gateway/wireguard
+          - gateway/geneve
+          - fabric
+          - webhook
+          - liqoctl
+          
+        # CodeQL supports [ 'c-cpp', 'csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'swift' ]
+        # Use only 'java-kotlin' to analyze code written in Java, Kotlin or both
+        # Use only 'javascript-typescript' to analyze code written in JavaScript, TypeScript or both
+        # Learn more about CodeQL language support at https://aka.ms/codeql-docs/language-support
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+        cache: true
+        cache-dependency-path: go.sum
+
+    # Initializes the CodeQL tools for scanning.
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: go
+        
+        # If you wish to specify custom queries, you can do so here or in a config file.
+        # By default, queries listed here will override any specified in a config file.
+        # Prefix the list here with "+" to use these queries and those in the config file.
+
+        # For more details on CodeQL's query packs, refer to: https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
+        # queries: security-extended,security-and-quality
+
+    - name: Build Application
+      run: |
+        go build ./cmd/${{ matrix.component }}
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:go"
+  
+  result:
+    name: "Results Message"
+    if: always()
+    needs: [ configure, analyze]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Slack Notification
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_LIQO_NOTIFICATION }}
+          SLACK_COLOR: ${{ needs.analyze.result }}
+          SLACK_MESSAGE: "https://github.com/liqotech/liqo/actions/runs/${{ github.run_id }}"
+          SLACK_TITLE: "Daily CodeQL analysis results  :rocket:"
+          MSG_MINIMAL: "true"
