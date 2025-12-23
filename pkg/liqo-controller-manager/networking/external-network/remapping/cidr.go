@@ -113,7 +113,7 @@ func forgeCIDRFirewallConfigurationDNATChain(cfg *networkingv1beta1.Configuratio
 	return firewall.Chain{
 		Name:     &DNATChainName,
 		Policy:   ptr.To(firewall.ChainPolicyAccept),
-		Type:     firewall.ChainTypeNAT,
+		Type:     ptr.To(firewall.ChainTypeNAT),
 		Hook:     &firewall.ChainHookPrerouting,
 		Priority: &firewall.ChainPriorityNATDest,
 		Rules: firewall.RulesSet{
@@ -127,7 +127,7 @@ func forgeCIDRFirewallConfigurationSNATChain(cfg *networkingv1beta1.Configuratio
 	return firewall.Chain{
 		Name:     &SNATChainName,
 		Policy:   ptr.To(firewall.ChainPolicyAccept),
-		Type:     firewall.ChainTypeNAT,
+		Type:     ptr.To(firewall.ChainTypeNAT),
 		Hook:     &firewall.ChainHookPostrouting,
 		Priority: &firewall.ChainPriorityNATSource,
 		Rules: firewall.RulesSet{

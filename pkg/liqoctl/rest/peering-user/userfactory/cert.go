@@ -17,10 +17,8 @@ package userfactory
 
 import (
 	"context"
-	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
@@ -44,15 +42,7 @@ import (
 )
 
 // GeneratePeerUser generates a new user to peer with the local cluster and returns its kubeconfig.
-// When tlsCompatibilityMode is true, RSA keys are generated to improve TLS handshake compatibility.
-// Otherwise, Ed25519 keys are used by default.
-func GeneratePeerUser(
-	ctx context.Context,
-	clusterID liqov1beta1.ClusterID,
-	tenantNsName string,
-	opts *factory.Factory,
-	tlsCompatibilityMode bool,
-) (string, error) {
+func GeneratePeerUser(ctx context.Context, clusterID liqov1beta1.ClusterID, tenantNsName string, opts *factory.Factory) (string, error) {
 	if exists, err := IsExistingPeerUser(ctx, opts.CRClient, clusterID); err != nil {
 		return "", fmt.Errorf("unable to check if the user already exists: %w", err)
 	} else if exists {
@@ -66,22 +56,10 @@ func GeneratePeerUser(
 		return "", fmt.Errorf("unable to get the API server CA: %w", err)
 	}
 
-	// Forge a new pair of keys based on TLS compatibility mode.
-	var private crypto.PrivateKey
-	if tlsCompatibilityMode {
-		// Use RSA-2048 for broader TLS compatibility
-		rsaKey, kerr := rsa.GenerateKey(rand.Reader, 2048)
-		if kerr != nil {
-			return "", fmt.Errorf("error while generating RSA credentials: %w", kerr)
-		}
-		private = rsaKey
-	} else {
-		// Default to Ed25519
-		_, edKey, kerr := ed25519.GenerateKey(rand.Reader)
-		if kerr != nil {
-			return "", fmt.Errorf("error while generating Ed25519 credentials: %w", kerr)
-		}
-		private = edKey
+	// Forge a new pair of keys.
+	_, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return "", fmt.Errorf("error while generating token credentials: %w", err)
 	}
 
 	// Generate a CSR with the newly created keys.

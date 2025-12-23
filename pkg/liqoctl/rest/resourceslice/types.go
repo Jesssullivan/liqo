@@ -29,10 +29,9 @@ type Options struct {
 	Class                      string
 	DisableVirtualNodeCreation bool
 
-	CPU            string
-	Memory         string
-	Pods           string
-	OtherResources map[string]string
+	CPU    string
+	Memory string
+	Pods   string
 }
 
 var _ rest.API = &Options{}

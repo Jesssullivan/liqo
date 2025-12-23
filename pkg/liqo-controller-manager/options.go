@@ -59,7 +59,6 @@ type Options struct {
 	APIServerAddressOverride string
 	CAOverride               string
 	TrustedCA                bool
-	TLSCompatibilityMode     bool
 	AWSConfig                *identitymanager.LocalAwsConfig
 	ClusterLabels            args.StringMap
 	IngressClasses           args.ClassNameList

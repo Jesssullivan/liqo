@@ -33,10 +33,9 @@ type Options struct {
 	resourceSliceName    string
 	vkOptionsTemplate    string
 
-	cpu            string
-	memory         string
-	pods           string
-	otherResources map[string]string
+	cpu    string
+	memory string
+	pods   string
 
 	storageClasses      []string
 	ingressClasses      []string
