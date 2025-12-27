@@ -166,14 +166,19 @@ push:controller-manager:
 # ============================================
 
 # Scheduled sync (runs every 15 min via GitLab Pipeline Schedule)
+# CRITICAL: Must use docker tag to avoid shell executors (outbot not installed on host)
 outbot:sync:scheduled:
   extends: .outbot:sync:scheduled
   stage: sync
+  tags:
+    - docker  # Force Docker executor - outbot runs in container
 
 # Manual/push-triggered sync
 outbot:sync:
   extends: .outbot:sync
   stage: sync
+  tags:
+    - docker  # Force Docker executor - outbot runs in container
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
       when: never
