@@ -20,8 +20,19 @@ rules:
   - list
   - watch
 - apiGroups:
+  - cilium.io
+  resources:
+  - ciliumnodes
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - networking.liqo.io
   resources:
+  - configurations
   - firewallconfigurations
   - firewallconfigurations/status
   - genevetunnels
