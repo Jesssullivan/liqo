@@ -37,6 +37,7 @@ import (
 
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
 	"github.com/liqotech/liqo/pkg/fabric"
+	"github.com/liqotech/liqo/pkg/fabric/cilium"
 	sourcedetector "github.com/liqotech/liqo/pkg/fabric/source-detector"
 	"github.com/liqotech/liqo/pkg/firewall"
 	"github.com/liqotech/liqo/pkg/gateway"
@@ -149,6 +150,46 @@ func run(cmd *cobra.Command, _ []string) error {
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		return fmt.Errorf("unable to set up readyz probe: %w", err)
+	}
+
+	// Detect Cilium CNI configuration for eBPF host routing compatibility.
+	// Uses a non-cached client because the manager cache hasn't started yet.
+	directClient, err := client.New(cfg, client.Options{Scheme: scheme})
+	if err != nil {
+		return fmt.Errorf("unable to create direct client for Cilium detection: %w", err)
+	}
+	ciliumConfig, err := cilium.DetectAndLog(cmd.Context(), directClient)
+	if err != nil {
+		klog.Warningf("Failed to detect Cilium configuration: %v", err)
+		ciliumConfig = nil
+	}
+
+	// Setup Cilium VTEP controller if eBPF host routing requires it.
+	if ciliumConfig != nil && ciliumConfig.IsBPFHostRouting() {
+		vtepReconciler := cilium.NewVTEPReconciler(
+			mgr.GetClient(),
+			mgr.GetScheme(),
+			mgr.GetEventRecorderFor("cilium-vtep-controller"),
+			ciliumConfig,
+		)
+		if err := vtepReconciler.SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to setup Cilium VTEP reconciler: %w", err)
+		}
+
+		ipcacheReconciler, err := cilium.NewIPCacheReconciler(
+			mgr.GetClient(),
+			mgr.GetScheme(),
+			mgr.GetEventRecorderFor("cilium-ipcache-controller"),
+			ciliumConfig,
+			cfg,
+			options.NodeName,
+		)
+		if err != nil {
+			return fmt.Errorf("unable to create Cilium IPCache reconciler: %w", err)
+		}
+		if err := ipcacheReconciler.SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to setup Cilium IPCache reconciler: %w", err)
+		}
 	}
 
 	gwr, err := sourcedetector.NewGatewayReconciler(
