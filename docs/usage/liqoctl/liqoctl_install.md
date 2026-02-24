@@ -1355,3 +1355,181 @@ liqoctl install openshift [flags]
 
 >The version of Liqo to be installed, among releases and commit SHAs. Defaults to the liqoctl version **(default "unknown")**
 
+## liqoctl install rke2
+
+Install Liqo in the selected rke2 cluster
+
+### Synopsis
+
+Install/upgrade Liqo in the selected rke2 cluster.
+
+This command wraps the Helm command to install/upgrade Liqo in the selected
+rke2 cluster, automatically retrieving most parameters based on the cluster
+configuration.
+
+Please, refer to the help of the root *liqoctl install* command for additional
+information and examples concerning its behavior and the common flags.
+
+
+
+```
+liqoctl install rke2 [flags]
+```
+
+### Examples
+
+
+```bash
+  $ liqoctl install rke2 --api-server-url https://liqo.example.local:9345 \
+      --cluster-labels region=us-west,environment=production \
+      --reserved-subnets 172.16.0.0/16,192.16.254.0/24
+```
+
+or
+
+```bash
+  $ liqoctl install rke2 --api-server-url https://liqo.example.local:9345 \
+      --cluster-labels region=us-west,environment=production \
+      --pod-cidr 10.0.0.0/16 --service-cidr 10.1.0.0/16 \
+      --reserved-subnets 172.16.0.0/16,192.16.254.0/24
+```
+
+or (with out-of-band peering for restricted networks)
+
+```bash
+  $ liqoctl install rke2 --api-server-url https://liqo.example.local:9345 \
+      --cluster-id my-rke2-cluster \
+      --cluster-labels region=us-west,environment=production
+```
+
+
+
+
+
+
+
+
+### Options
+`--api-server-url` _string_:
+
+>The Kubernetes API Server URL (defaults to the one specified in the kubeconfig)
+
+`--pod-cidr` _string_:
+
+>The Pod CIDR of the cluster **(default "10.42.0.0/16")**
+
+`--service-cidr` _string_:
+
+>The Service CIDR of the cluster **(default "10.43.0.0/16")**
+
+
+### Global options
+
+`--cluster` _string_:
+
+>The name of the kubeconfig cluster to use
+
+`--cluster-id` _clusterID_:
+
+>The id identifying the cluster in Liqo
+
+`--cluster-labels` _stringMap_:
+
+>The set of labels (i.e., key/value pairs, separated by comma) identifying the current cluster, and propagated to the virtual nodes
+
+`--context` _string_:
+
+>The name of the kubeconfig context to use
+
+`--disable-api-server-sanity-check`
+
+>Disable the sanity checks concerning the retrieved Kubernetes API server URL (default false)
+
+`--disable-kernel-version-check`
+
+>Disable the check of the minimum kernel version required to run the wireguard interface (default false)
+
+`--disable-telemetry`
+
+>Disable the anonymous and aggregated Liqo telemetry collection (default false)
+
+`--dry-run`
+
+>Simulate the installation process (default false)
+
+`--dump-values-path` _string_:
+
+>The path where the generated values file is saved (only in case --only-output-values is set). Default: './values.yaml'
+
+`--enable-metrics`
+
+>Enable metrics exposition through prometheus (default false)
+
+`--global-annotations` _stringToString_:
+
+>Global annotations to be added to all created resources (key=value)
+
+`--global-labels` _stringToString_:
+
+>Global labels to be added to all created resources (key=value)
+
+`--kubeconfig` _string_:
+
+>Path to the kubeconfig file to use for CLI requests
+
+`--local-chart-path` _string_:
+
+>The local path used to retrieve the Helm chart, instead of the upstream one
+
+`-n`, `--namespace` _string_:
+
+>The namespace where Liqo is installed in **(default "liqo")**
+
+`--only-output-values`
+
+>Generate the pre-configured values file for further customization, instead of installing Liqo (default false)
+
+`--repo-url` _string_:
+
+>The URL of the git repository used to retrieve the Helm chart, if a non released version is specified **(default "https://github.com/liqotech/liqo")**
+
+`--reserved-subnets` _cidrList_:
+
+>The private CIDRs to be excluded, as already in use (e.g., the subnet of the cluster nodes); PodCIDR and ServiceCIDR shall not be included.
+
+`--set` _stringArray_:
+
+>Set additional values on the command line (can specify multiple times or separate values with commas: key1=val1,key2=val2)
+
+`--set-string` _stringArray_:
+
+>Set additional string values on the command line (can specify multiple times or separate values with commas: key1=val1,key2=val2)
+
+`--skip-confirm`
+
+>Skip the confirmation prompt (suggested for automation)
+
+`--skip-validation`
+
+>Skip the validation of the arguments (PodCIDR, ServiceCIDR). This is useful when you are sure of what you are doing and the amount of pods and services in your cluster is very large (default false)
+
+`--timeout` _duration_:
+
+>The timeout for the completion of the installation process **(default 10m0s)**
+
+`--user` _string_:
+
+>The name of the kubeconfig user to use
+
+`--values` _stringArray_:
+
+>Specify values in a YAML file or a URL (can specify multiple)
+
+`-v`, `--verbose`
+
+>Enable verbose logs (default false)
+
+`--version` _string_:
+
+>The version of Liqo to be installed, among releases and commit SHAs. Defaults to the liqoctl version **(default "unknown")**
+
