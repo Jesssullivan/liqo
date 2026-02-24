@@ -149,8 +149,9 @@ func DetectConfig(ctx context.Context, cl client.Client) (*Config, error) {
 		}
 	}
 
-	// Check for legacy host routing fallback (bpf.hostLegacyRouting=true).
-	if legacyRouting, ok := cm.Data["bpf-host-legacy-routing"]; ok {
+	// Check for legacy host routing fallback.
+	// Cilium ConfigMap uses "enable-host-legacy-routing" (not the Helm value name "bpf-host-legacy-routing").
+	if legacyRouting, ok := cm.Data["enable-host-legacy-routing"]; ok {
 		config.LegacyHostRoutingEnabled = strings.EqualFold(legacyRouting, boolTrue)
 	}
 

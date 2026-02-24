@@ -145,7 +145,7 @@ var _ = Describe("Cilium Detection", func() {
 					"routing-mode":            "native",
 					"kube-proxy-replacement":  "true",
 					"enable-bpf-masquerade":   "true",
-					"bpf-host-legacy-routing": "false",
+					"enable-host-legacy-routing": "false",
 					"enable-vtep":             "false",
 				})
 			})
@@ -181,7 +181,7 @@ var _ = Describe("Cilium Detection", func() {
 			BeforeEach(func() {
 				createCiliumConfigMap(ctx, k8sClient, map[string]string{
 					"routing-mode":            "native",
-					"bpf-host-legacy-routing": "true",
+					"enable-host-legacy-routing": "true",
 				})
 			})
 
