@@ -39,7 +39,6 @@ var _ = Describe("IPCache Controller", func() {
 		ciliumCfg = &CiliumConfig{
 			Detected:        true,
 			HostRoutingMode: "BPF",
-			LRPSupported:    true,
 		}
 	})
 

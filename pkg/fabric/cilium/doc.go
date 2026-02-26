@@ -21,26 +21,41 @@
 // ip rules and custom routing tables to direct cross-cluster traffic through
 // the WireGuard tunnel.
 //
-// # Solution
+// # Current Status (W09 Research Findings)
 //
-// This package implements CiliumLocalRedirectPolicy (LRP) support for Liqo.
-// When Cilium eBPF host routing is detected:
+// Three integration approaches were investigated; all are non-functional:
 //
-//  1. The detect.go module identifies Cilium configuration from the cluster
-//  2. The lrp_controller.go watches ForeignCluster resources
-//  3. For each peering, an LRP is created that redirects traffic destined
-//     for remote pod CIDRs to the local Liqo gateway pod
-//  4. The gateway pod handles WireGuard encapsulation as normal
+//   - LRP (CiliumLocalRedirectPolicy): Only supports individual IPs, not CIDRs.
+//     Liqo needs CIDR-based routing for remote pod ranges. Approach abandoned;
+//     controller deleted.
+//
+//   - IPCache (CiliumNode annotations): Annotations on CiliumNode objects do NOT
+//     populate the BPF ipcache maps. The cilium-agent ignores custom annotations
+//     and only populates ipcache from its own internal state. Controller retained
+//     as reference code but is non-functional.
+//
+//   - VTEP (Virtual Tunnel Endpoint): Cilium VTEP uses VXLAN encapsulation, but
+//     Liqo's network fabric uses Geneve tunnels. The encapsulation mismatch means
+//     VTEP entries cannot route traffic to Liqo gateways. Controller retained as
+//     reference code but is non-functional.
+//
+// # Phase 1 Workaround
+//
+// Set bpf.hostLegacyRouting=true in the Cilium Helm values. This re-enables
+// kernel routing table lookups alongside eBPF, allowing Liqo's standard ip-rule
+// and routing-table approach to work. This has a minor performance cost but
+// provides full cross-cluster connectivity.
+//
+// # Working Components
+//
+//   - detect.go: Correctly identifies Cilium configuration, eBPF host routing
+//     mode, legacy routing fallback, and VTEP state. This is production-ready.
 //
 // # Usage
 //
-// The Cilium integration is automatically enabled when:
-//   - Cilium is detected in the cluster (cilium-config ConfigMap exists)
-//   - eBPF host routing is enabled (routing-mode: native or kube-proxy-replacement)
-//   - CiliumLocalRedirectPolicy CRD is available
-//
-// No manual configuration is required. The liqo-fabric DaemonSet will
-// automatically detect Cilium and create LRP resources as needed.
+// The Cilium detection is automatically enabled when liqo-fabric starts.
+// If Cilium is detected with eBPF host routing and no legacy fallback,
+// a warning is logged recommending bpf.hostLegacyRouting=true.
 //
 // # Compatibility
 //
@@ -52,5 +67,6 @@
 // # References
 //
 //   - GitHub Issue #2166: https://github.com/liqotech/liqo/issues/2166
-//   - Cilium LRP Docs: https://docs.cilium.io/en/stable/network/kubernetes/local-redirect-policy/
+//   - Cilium VTEP Docs: https://docs.cilium.io/en/stable/network/vtep/
+//   - Cilium IPCache: https://docs.cilium.io/en/stable/network/concepts/routing/
 package cilium

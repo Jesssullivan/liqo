@@ -109,7 +109,13 @@ func NewIPCacheReconciler(
 // +kubebuilder:rbac:groups=cilium.io,resources=ciliumnodes,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 
-// Reconcile handles Configuration events and manages Cilium ipcache entries
+// Reconcile handles Configuration events and manages Cilium ipcache entries.
+//
+// FIXME: Non-functional. CiliumNode annotations have no effect on BPF datapath.
+// The cilium-agent ignores custom annotations and only populates ipcache from its
+// own internal state (node discovery, endpoint events, CIDR allocations). Annotating
+// CiliumNode objects does not cause entries to appear in the BPF ipcache maps.
+// This controller is retained as reference code for future investigation.
 func (r *IPCacheReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	klog.V(4).Infof("Reconciling Configuration %s for Cilium ipcache", req.NamespacedName)
 

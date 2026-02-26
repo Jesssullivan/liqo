@@ -47,26 +47,6 @@ var _ = Describe("Cilium Detection", func() {
 			})
 		})
 
-		Describe("NeedsLRP", func() {
-			It("should return true when BPF host routing and LRP supported", func() {
-				config := &CiliumConfig{
-					Detected:        true,
-					HostRoutingMode: "BPF",
-					LRPSupported:    true,
-				}
-				Expect(config.NeedsLRP()).To(BeTrue())
-			})
-
-			It("should return false when LRP not supported", func() {
-				config := &CiliumConfig{
-					Detected:        true,
-					HostRoutingMode: "BPF",
-					LRPSupported:    false,
-				}
-				Expect(config.NeedsLRP()).To(BeFalse())
-			})
-		})
-
 		Describe("NeedsVTEP", func() {
 			It("should return true when BPF routing without legacy fallback or VTEP", func() {
 				config := &CiliumConfig{

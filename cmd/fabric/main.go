@@ -155,9 +155,12 @@ func run(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Detect Cilium CNI configuration for eBPF host routing compatibility.
-	// When Cilium with eBPF host routing is detected, we need to create
-	// CiliumLocalRedirectPolicy resources to redirect cross-cluster traffic
-	// to the Liqo gateway pod (since eBPF bypasses kernel routing tables).
+	// When Cilium with eBPF host routing is detected, we log a warning
+	// recommending bpf.hostLegacyRouting=true as the Phase 1 workaround.
+	//
+	// NOTE: All three programmatic integration approaches (LRP, IPCache, VTEP)
+	// were found to be non-functional in W09 research. See pkg/fabric/cilium/doc.go
+	// for details. The controllers below are retained for reference only.
 	//
 	// NOTE: We must use a non-cached client here because the manager cache
 	// hasn't been started yet. Using mgr.GetClient() would fail with
@@ -169,33 +172,19 @@ func run(cmd *cobra.Command, _ []string) error {
 	ciliumConfig, err := cilium.DetectAndLog(cmd.Context(), directClient)
 	if err != nil {
 		klog.Warningf("Failed to detect Cilium configuration: %v", err)
-		// Continue without Cilium LRP support - standard routing will be used
+		// Continue without Cilium integration - standard routing will be used
 		ciliumConfig = nil
 	}
 
-	// Setup Cilium LRP controller if needed
-	if ciliumConfig != nil && ciliumConfig.NeedsLRP() {
-		lrpReconciler, err := cilium.NewLRPReconciler(
-			mgr.GetClient(),
-			mgr.GetScheme(),
-			mgr.GetEventRecorderFor("cilium-lrp-controller"),
-			ciliumConfig,
-			cfg, // Pass rest config for dynamic client
-		)
-		if err != nil {
-			return fmt.Errorf("unable to create Cilium LRP reconciler: %w", err)
-		}
-
-		if err := lrpReconciler.SetupWithManager(mgr); err != nil {
-			return fmt.Errorf("unable to setup Cilium LRP reconciler: %w", err)
-		}
-		klog.Info("Cilium LRP controller enabled for eBPF host routing compatibility")
-	}
-
-	// Setup Cilium IPCache controller for CIDR-based routing
-	// This injects remote pod CIDRs into Cilium's ipcache, enabling eBPF to route
-	// cross-cluster traffic without falling back to kernel routing tables.
+	// NOTE: IPCache and VTEP controllers are non-functional but retained for reference.
+	// IPCache: CiliumNode annotations do not populate BPF ipcache maps.
+	// VTEP: Cilium VTEP uses VXLAN but Liqo uses Geneve (encapsulation mismatch).
+	// The working workaround is bpf.hostLegacyRouting=true in Cilium config.
 	if ciliumConfig != nil && ciliumConfig.IsBPFHostRouting() {
+		klog.Warning("Cilium eBPF host routing detected. IPCache and VTEP controllers are " +
+			"registered but are known to be non-functional (see pkg/fabric/cilium/doc.go). " +
+			"Recommended workaround: set bpf.hostLegacyRouting=true in Cilium Helm values.")
+
 		ipcacheReconciler, err := cilium.NewIPCacheReconciler(
 			mgr.GetClient(),
 			mgr.GetScheme(),
@@ -211,13 +200,8 @@ func run(cmd *cobra.Command, _ []string) error {
 		if err := ipcacheReconciler.SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to setup Cilium IPCache reconciler: %w", err)
 		}
-		klog.Info("Cilium IPCache controller enabled for cross-cluster CIDR routing")
-	}
+		klog.Info("Cilium IPCache controller registered (non-functional, reference only)")
 
-	// Setup Cilium VTEP controller for cross-cluster CIDR routing via VTEP
-	// This configures Cilium's VTEP integration to route remote pod CIDRs
-	// through Liqo gateway pods when eBPF host routing bypasses kernel routing.
-	if ciliumConfig != nil && ciliumConfig.IsBPFHostRouting() {
 		vtepReconciler := cilium.NewVTEPReconciler(
 			mgr.GetClient(),
 			mgr.GetScheme(),
@@ -228,7 +212,7 @@ func run(cmd *cobra.Command, _ []string) error {
 		if err := vtepReconciler.SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to setup Cilium VTEP reconciler: %w", err)
 		}
-		klog.Info("Cilium VTEP controller enabled for cross-cluster CIDR routing")
+		klog.Info("Cilium VTEP controller registered (non-functional, reference only)")
 	}
 
 	gwr, err := sourcedetector.NewGatewayReconciler(

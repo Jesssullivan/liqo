@@ -96,7 +96,13 @@ func NewVTEPReconciler(
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;update;patch,namespace=kube-system
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 
-// Reconcile handles Configuration events and manages Cilium VTEP configuration
+// Reconcile handles Configuration events and manages Cilium VTEP configuration.
+//
+// FIXME: Non-functional. Cilium VTEP uses VXLAN encapsulation but Liqo uses Geneve.
+// The VTEP integration expects a VXLAN peer at the configured endpoint IP, but Liqo
+// gateway pods speak Geneve (or WireGuard). The encapsulation protocol mismatch means
+// VTEP-routed packets are dropped at the gateway. This controller is retained as
+// reference code for future investigation (e.g., if Liqo adds a VXLAN adapter).
 func (r *VTEPReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	klog.V(4).Infof("Reconciling Configuration %s for Cilium VTEP", req.NamespacedName)
 
