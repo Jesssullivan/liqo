@@ -7,11 +7,12 @@ This documentation covers the integration between Liqo's network fabric and Cili
 1. [Problem Statement](./01-problem-statement.md)
 2. [Architecture Analysis](./02-architecture-analysis.md)
 3. [Solution Options](./03-solution-options.md)
-4. [Recommended Fix: IPCache Injection](./04-ipcache-injection-fix.md)
+4. [Recommended Fix: IPCache Injection](./04-ipcache-injection-fix.md) - *Superseded by 09*
 5. [Canonical Implementation](./05-canonical-implementation.md) - **Liqo patterns & structure**
 6. [Testing Strategy](./06-testing-strategy.md)
 7. [Migration Guide](./07-migration-guide.md)
 8. [Integration Options Analysis](./08-integration-options-analysis.md) - **CERN Discussion Reference**
+9. [**W09 Deep Research Findings**](./09-w09-deep-research-findings.md) - **START HERE** - Comprehensive analysis superseding earlier docs
 
 ## Quick Start
 
@@ -49,15 +50,14 @@ Traffic Flow (Actual with Cilium eBPF):
 
 ## Solution Summary
 
-We recommend **Option 2: Cilium IPCache Injection** as the primary fix:
+> **UPDATE (2026-02-25)**: IPCache annotation injection was found to be non-functional. See [09-w09-deep-research-findings.md](./09-w09-deep-research-findings.md) for the corrected analysis. The recommended immediate path is `bpf.hostLegacyRouting=true`.
 
-| Solution | Scope | Performance Impact | Complexity |
-|----------|-------|-------------------|------------|
-| bpf.hostLegacyRouting=true | Global | High (disables eBPF) | Low |
-| **IPCache Injection** | Targeted | None | Medium |
-| Cluster Mesh | Alternative arch | None | High |
-
-The IPCache injection approach adds Liqo's remote pod CIDRs directly to Cilium's BPF maps, enabling eBPF to route cross-cluster traffic without falling back to kernel routing.
+| Solution | Scope | Performance Impact | Complexity | Status |
+|----------|-------|-------------------|------------|--------|
+| **bpf.hostLegacyRouting=true** | Global | Moderate | Low | **Recommended (Phase 1)** |
+| VTEP+VXLAN bridge | Targeted | Low | Medium | Future (Phase 2) |
+| Cilium Agent API | Targeted | None | High | Research (Phase 3) |
+| IPCache Annotation | N/A | N/A | N/A | ~~Non-functional~~ |
 
 ## Branch
 
