@@ -44,7 +44,7 @@ jobs:
           fi
 
   build:
-    name: Build ${{ matrix.component }}
+    name: Build ${{ matrix.image-name }}
     runs-on: ubuntu-latest
     needs: configure
     permissions:
@@ -53,16 +53,49 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component:
-          - liqo-controller-manager
-          - crd-replicator
-          - fabric
-          - gateway
-          - ipam
-          - proxy
-          - webhook
-          - virtual-kubelet
-          - metric-agent
+        include:
+          # Standard components: cmd/<component> → liqo-<component> image
+          - component: liqo-controller-manager
+            cmd-path: ./cmd/liqo-controller-manager
+            image-name: liqo-controller-manager
+          - component: crd-replicator
+            cmd-path: ./cmd/crd-replicator
+            image-name: crd-replicator
+          - component: fabric
+            cmd-path: ./cmd/fabric
+            image-name: fabric
+          - component: gateway
+            cmd-path: ./cmd/gateway
+            image-name: gateway
+          - component: ipam
+            cmd-path: ./cmd/ipam
+            image-name: ipam
+          - component: proxy
+            cmd-path: ./cmd/proxy
+            image-name: proxy
+          - component: webhook
+            cmd-path: ./cmd/webhook
+            image-name: webhook
+          - component: virtual-kubelet
+            cmd-path: ./cmd/virtual-kubelet
+            image-name: virtual-kubelet
+          - component: metric-agent
+            cmd-path: ./cmd/metric-agent
+            image-name: metric-agent
+          - component: telemetry
+            cmd-path: ./cmd/telemetry
+            image-name: telemetry
+          - component: uninstaller
+            cmd-path: ./cmd/uninstaller
+            image-name: uninstaller
+          # Gateway sub-components: cmd/gateway/<sub> → gateway/<sub> image
+          # These are separate binaries with wireguard/geneve-specific flags
+          - component: wireguard
+            cmd-path: ./cmd/gateway/wireguard
+            image-name: gateway/wireguard
+          - component: geneve
+            cmd-path: ./cmd/gateway/geneve
+            image-name: gateway/geneve
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -83,7 +116,7 @@ jobs:
           mkdir -p ./bin/amd64
           go build -ldflags="-s -w" \
             -o "./bin/amd64/${{ matrix.component }}_linux_amd64" \
-            "./cmd/${{ matrix.component }}"
+            "${{ matrix.cmd-path }}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -95,7 +128,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push ${{ matrix.component }}
+      - name: Build and push ${{ matrix.image-name }}
         uses: docker/build-push-action@v6
         env:
           DOCKER_BUILD_RECORD_UPLOAD: false
@@ -107,9 +140,9 @@ jobs:
           build-args: |
             COMPONENT=${{ matrix.component }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.component }}:${{ needs.configure.outputs.image-tag }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.component }}:${{ needs.configure.outputs.latest-tag }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.component }}-ci:${{ needs.configure.outputs.image-tag }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.component }}-ci:${{ needs.configure.outputs.latest-tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image-name }}:${{ needs.configure.outputs.image-tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image-name }}:${{ needs.configure.outputs.latest-tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image-name }}-ci:${{ needs.configure.outputs.image-tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image-name }}-ci:${{ needs.configure.outputs.latest-tag }}
           cache-from: type=gha,scope=${{ matrix.component }}
           cache-to: type=gha,mode=max,scope=${{ matrix.component }}
