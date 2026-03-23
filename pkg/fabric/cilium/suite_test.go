@@ -18,7 +18,6 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -47,21 +46,7 @@ var (
 	cancel    context.CancelFunc
 )
 
-const (
-	timeout  = time.Second * 10
-	interval = time.Millisecond * 250
-
-	// Test cluster identifiers
-	localClusterID  = "local-cluster-id"
-	remoteClusterID = "remote-cluster-id"
-
-	// Test CIDRs
-	remotePodCIDR = "10.244.0.0/16"
-	gatewayIP     = "10.109.0.89"
-
-	// Test node name
-	testNodeName = "test-node-1"
-)
+// No controller-specific test constants needed — only detect_test.go remains.
 
 func TestCilium(t *testing.T) {
 	RegisterFailHandler(Fail)

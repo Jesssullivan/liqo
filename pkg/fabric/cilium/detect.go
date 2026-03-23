@@ -52,19 +52,6 @@ func (c *CiliumConfig) IsBPFHostRouting() bool {
 	return c.Detected && c.HostRoutingMode == "BPF"
 }
 
-// NeedsVTEP returns true if this Cilium configuration requires VTEP integration
-// for Liqo cross-cluster traffic. VTEP is needed when eBPF host routing is active
-// and legacy host routing fallback is not enabled.
-func (c *CiliumConfig) NeedsVTEP() bool {
-	return c.IsBPFHostRouting() && !c.LegacyHostRoutingEnabled && !c.VTEPEnabled
-}
-
-// IsLegacyHostRoutingEnabled returns true if Cilium has legacy host routing
-// fallback enabled (bpf.hostLegacyRouting=true), which allows kernel routes to work.
-func (c *CiliumConfig) IsLegacyHostRoutingEnabled() bool {
-	return c.LegacyHostRoutingEnabled
-}
-
 const (
 	// CiliumConfigMapName is the name of the Cilium ConfigMap.
 	CiliumConfigMapName = "cilium-config"

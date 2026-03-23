@@ -1,4 +1,4 @@
-// Copyright 2019-2025 The Liqo Authors
+// Copyright 2019-2026 The Liqo Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -155,64 +155,15 @@ func run(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Detect Cilium CNI configuration for eBPF host routing compatibility.
-	// When Cilium with eBPF host routing is detected, we log a warning
-	// recommending bpf.hostLegacyRouting=true as the Phase 1 workaround.
-	//
-	// NOTE: All three programmatic integration approaches (LRP, IPCache, VTEP)
-	// were found to be non-functional in W09 research. See pkg/fabric/cilium/doc.go
-	// for details. The controllers below are retained for reference only.
-	//
-	// NOTE: We must use a non-cached client here because the manager cache
-	// hasn't been started yet. Using mgr.GetClient() would fail with
-	// "cache is not started" error.
+	// Detect Cilium and log warnings if eBPF host routing is active.
+	// Recommended workaround: bpf.hostLegacyRouting=true in Cilium Helm values.
+	// See pkg/fabric/cilium/doc.go for research details.
 	directClient, err := client.New(cfg, client.Options{Scheme: scheme})
 	if err != nil {
 		return fmt.Errorf("unable to create direct client for Cilium detection: %w", err)
 	}
-	ciliumConfig, err := cilium.DetectAndLog(cmd.Context(), directClient)
-	if err != nil {
+	if _, err := cilium.DetectAndLog(cmd.Context(), directClient); err != nil {
 		klog.Warningf("Failed to detect Cilium configuration: %v", err)
-		// Continue without Cilium integration - standard routing will be used
-		ciliumConfig = nil
-	}
-
-	// NOTE: IPCache and VTEP controllers are non-functional but retained for reference.
-	// IPCache: CiliumNode annotations do not populate BPF ipcache maps.
-	// VTEP: Cilium VTEP uses VXLAN but Liqo uses Geneve (encapsulation mismatch).
-	// The working workaround is bpf.hostLegacyRouting=true in Cilium config.
-	if ciliumConfig != nil && ciliumConfig.IsBPFHostRouting() {
-		klog.Warning("Cilium eBPF host routing detected. IPCache and VTEP controllers are " +
-			"registered but are known to be non-functional (see pkg/fabric/cilium/doc.go). " +
-			"Recommended workaround: set bpf.hostLegacyRouting=true in Cilium Helm values.")
-
-		ipcacheReconciler, err := cilium.NewIPCacheReconciler(
-			mgr.GetClient(),
-			mgr.GetScheme(),
-			mgr.GetEventRecorderFor("cilium-ipcache-controller"),
-			ciliumConfig,
-			cfg,
-			options.NodeName,
-		)
-		if err != nil {
-			return fmt.Errorf("unable to create Cilium IPCache reconciler: %w", err)
-		}
-
-		if err := ipcacheReconciler.SetupWithManager(mgr); err != nil {
-			return fmt.Errorf("unable to setup Cilium IPCache reconciler: %w", err)
-		}
-		klog.Info("Cilium IPCache controller registered (non-functional, reference only)")
-
-		vtepReconciler := cilium.NewVTEPReconciler(
-			mgr.GetClient(),
-			mgr.GetScheme(),
-			mgr.GetEventRecorderFor("cilium-vtep-controller"),
-			ciliumConfig,
-		)
-
-		if err := vtepReconciler.SetupWithManager(mgr); err != nil {
-			return fmt.Errorf("unable to setup Cilium VTEP reconciler: %w", err)
-		}
-		klog.Info("Cilium VTEP controller registered (non-functional, reference only)")
 	}
 
 	gwr, err := sourcedetector.NewGatewayReconciler(
@@ -245,7 +196,8 @@ func run(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unable to create firewall configuration reconciler: %w", err)
 	}
 
-	if err := fwcr.SetupWithManager(cmd.Context(), mgr, options.EnableNftMonitor); err != nil {
+	if err := fwcr.SetupWithManager(cmd.Context(), mgr,
+		options.EnableNftMonitor, options.ReconcileTimeout); err != nil {
 		return fmt.Errorf("unable to setup firewall configuration reconciler: %w", err)
 	}
 
@@ -261,7 +213,8 @@ func run(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unable to create route configuration reconciler: %w", err)
 	}
 
-	if err := rcr.SetupWithManager(cmd.Context(), mgr); err != nil {
+	if err := rcr.SetupWithManager(cmd.Context(), mgr,
+		options.EnableRouteMonitor, options.ReconcileTimeout); err != nil {
 		return fmt.Errorf("unable to setup route configuration reconciler: %w", err)
 	}
 

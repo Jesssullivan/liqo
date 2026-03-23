@@ -1,4 +1,4 @@
-// Copyright 2019-2025 The Liqo Authors
+// Copyright 2019-2026 The Liqo Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,6 +30,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -89,7 +91,7 @@ func (r *RouteConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.R
 	routeconfiguration := &networkingv1beta1.RouteConfiguration{}
 	if err = r.Get(ctx, req.NamespacedName, routeconfiguration); err != nil {
 		if apierrors.IsNotFound(err) {
-			klog.Infof("There is no routeconfiguration %s", req.String())
+			klog.V(6).Infof("There is no routeconfiguration %s", req.String())
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("unable to get the routeconfiguration %q: %w", req.NamespacedName, err)
@@ -158,7 +160,7 @@ func (r *RouteConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	klog.Infof("Applying routeconfiguration %s", req.String())
+	klog.V(4).Infof("Applying routeconfiguration %s", req.String())
 
 	if err = EnsureTablePresence(routeconfiguration, tableID); err != nil {
 		return ctrl.Result{}, err
@@ -179,13 +181,17 @@ func (r *RouteConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.R
 }
 
 // SetupWithManager register the RouteConfigurationReconciler to the manager.
-func (r *RouteConfigurationReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
+func (r *RouteConfigurationReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager,
+	enableRouteMonitor bool, reconcileTimeout time.Duration) error {
 	klog.Infof("Starting RouteConfiguration controller with labels %v", r.LabelsSets)
 
+	klog.Infof("route monitor enabled: %t", enableRouteMonitor)
 	src := make(chan event.GenericEvent)
-	go func() {
-		utilruntime.Must(netmonitor.InterfacesMonitoring(ctx, src, &netmonitor.Options{Route: &netmonitor.OptionsRoute{Delete: true}}))
-	}()
+	if enableRouteMonitor {
+		go func() {
+			utilruntime.Must(netmonitor.InterfacesMonitoring(ctx, src, &netmonitor.Options{Route: &netmonitor.OptionsRoute{Delete: true}}))
+		}()
+	}
 
 	filterByLabelsPredicate, err := forgeLabelsPredicate(r.LabelsSets)
 	if err != nil {
@@ -195,6 +201,9 @@ func (r *RouteConfigurationReconciler) SetupWithManager(ctx context.Context, mgr
 	return ctrl.NewControllerManagedBy(mgr).Named(consts.CtrlRouteConfiguration).
 		For(&networkingv1beta1.RouteConfiguration{}, builder.WithPredicates(filterByLabelsPredicate)).
 		WatchesRawSource(NewRouteWatchSource(src, NewRouteWatchEventHandler(r.Client, r.LabelsSets))).
+		WithOptions(controller.Options{
+			ReconciliationTimeout: reconcileTimeout,
+		}).
 		Complete(r)
 }
 
@@ -240,9 +249,12 @@ func (r *RouteConfigurationReconciler) UpdateStatus(ctx context.Context, er reco
 	} else {
 		conditionRef.Status = metav1.ConditionFalse
 	}
-	if oldStatus != conditionRef.Status {
-		conditionRef.LastTransitionTime = metav1.Now()
+
+	if oldStatus == conditionRef.Status {
+		return nil
 	}
+
+	conditionRef.LastTransitionTime = metav1.Now()
 
 	er.Eventf(routeconfiguration, "Normal", "RouteConfigurationUpdate", "RouteConfiguration %s: %s", conditionRef.Type, conditionRef.Status)
 	if clerr := r.Client.Status().Update(ctx, routeconfiguration); clerr != nil {
