@@ -1,4 +1,4 @@
-// Copyright 2019-2025 The Liqo Authors
+// Copyright 2019-2026 The Liqo Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/nftables"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -30,6 +31,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -96,7 +98,7 @@ func (r *FirewallConfigurationReconciler) Reconcile(ctx context.Context, req ctr
 	fwcfg := &networkingv1beta1.FirewallConfiguration{}
 	if err = r.Get(ctx, req.NamespacedName, fwcfg); err != nil {
 		if apierrors.IsNotFound(err) {
-			klog.Infof("There is no firewallconfiguration %s", req.String())
+			klog.V(6).Infof("There is no firewallconfiguration %s", req.String())
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("unable to get the firewallconfiguration %q: %w", req.NamespacedName, err)
@@ -162,22 +164,28 @@ func (r *FirewallConfigurationReconciler) Reconcile(ctx context.Context, req ctr
 }
 
 // SetupWithManager register the FirewallConfigurationReconciler to the manager.
-func (r *FirewallConfigurationReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, enableNftMonitor bool) error {
+func (r *FirewallConfigurationReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager,
+	enableNftMonitor bool, reconcileTimeout time.Duration) error {
 	klog.Infof("Starting FirewallConfiguration controller with labels %v", r.LabelsSets)
 	filterByLabelsPredicate, err := forgeLabelsPredicate(r.LabelsSets)
 	if err != nil {
 		return err
 	}
 
+	klog.Infof("nftables monitor enabled: %t", enableNftMonitor)
 	src := make(chan event.GenericEvent)
 	if enableNftMonitor {
 		go func() {
 			utilruntime.Must(netmonitor.InterfacesMonitoring(ctx, src, &netmonitor.Options{Nftables: &netmonitor.OptionsNftables{Delete: true}}))
 		}()
 	}
+
 	return ctrl.NewControllerManagedBy(mgr).Named(consts.CtrlFirewallConfiguration).
 		For(&networkingv1beta1.FirewallConfiguration{}, builder.WithPredicates(filterByLabelsPredicate)).
 		WatchesRawSource(NewFirewallWatchSource(src, NewFirewallWatchEventHandler(r.Client, r.LabelsSets))).
+		WithOptions(controller.Options{
+			ReconciliationTimeout: reconcileTimeout,
+		}).
 		Complete(r)
 }
 
@@ -223,9 +231,12 @@ func (r *FirewallConfigurationReconciler) UpdateStatus(ctx context.Context, er r
 	} else {
 		conditionRef.Status = metav1.ConditionFalse
 	}
-	if oldStatus != conditionRef.Status {
-		conditionRef.LastTransitionTime = metav1.Now()
+
+	if oldStatus == conditionRef.Status {
+		return nil
 	}
+
+	conditionRef.LastTransitionTime = metav1.Now()
 
 	er.Eventf(fwcfg, "Normal", "FirewallConfigurationUpdate", "FirewallConfiguration %s: %s", conditionRef.Type, conditionRef.Status)
 	if clerr := r.Client.Status().Update(ctx, fwcfg); clerr != nil {
